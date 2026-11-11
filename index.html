@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LAN4002 職業中文傳意 - 自動批改平台</title>
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #2c3e50; text-align: center; }
+        .config-panel, .input-panel { margin-bottom: 25px; padding: 15px; border: 1px solid #ddd; background: #fafafa; border-radius: 6px; }
+        label { font-weight: bold; display: block; margin-bottom: 8px; }
+        input[type="text"], textarea { width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #0056b3; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        button:hover { background-color: #004494; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        
+        .record-table { width: 100%; border-collapse: collapse; margin-top: 20px; border: 2px solid #000; }
+        .record-table th, .record-table td { border: 1px solid #000; padding: 12px; vertical-align: top; }
+        .record-table th { background-color: #e9ecef; font-weight: bold; text-align: center; font-size: 16px; }
+        .col-name { width: 12%; text-align: center; font-weight: bold; }
+        .col-grade { width: 10%; text-align: center; }
+        .col-score { width: 10%; text-align: center; }
+        .col-comments { width: 68%; }
+        
+        .comment-overall { font-weight: bold; margin-bottom: 10px; }
+        .comment-section { font-weight: bold; margin-top: 15px; margin-bottom: 5px; }
+        .comment-list { margin: 0; padding-left: 20px; }
+        .comment-list li { margin-bottom: 6px; line-height: 1.5; }
+        
+        #loading { display: none; text-align: center; color: #d9534f; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📝 LAN4002 推介文書 - 教師自動批改平台</h1>
+    
+    <div class="config-panel">
+        <label for="apiKey">DeepSeek API Key：</label>
+        <input type="text" id="apiKey" placeholder="請輸入您的 DeepSeek API 金鑰 (sk-...)">
+    </div>
+
+    <div class="input-panel">
+        <label for="studentName">考生姓名 (選填)：</label>
+        <input type="text" id="studentName" placeholder="例如：張穎恩">
+        
+        <label for="studentAnswer">已識別的學生手寫文本 (OCR 結果)：</label>
+        <textarea id="studentAnswer" rows="10" placeholder="請將解析出的推廣信文本貼上至此..."></textarea>
+        
+        <button id="gradeBtn" onclick="startGrading()">🚀 開始 DeepSeek 智能批改</button>
+        <div id="loading">系統批改中，請稍候... (約需 10-15 秒)</div>
+    </div>
+
+    <h2>單元總評核：推介文書・考生成績及評語記錄表</h2>
+    <table class="record-table" id="resultTable">
+        <thead>
+            <tr>
+                <th class="col-name">考生姓名</th>
+                <th class="col-grade">等級</th>
+                <th class="col-score">對照分數</th>
+                <th class="col-comments">評語</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // 完整的 System Prompt 已直接寫入
+    const systemPrompt = `你是職業訓練局 (VTC) 高級文憑課程「LAN4002 職業中文傳意」的專業評卷員。你的任務是批改學生撰寫的「推介文書（卷二推廣信）」，並嚴格按照提供的評核標準給出等級、分數及詳細評語。
+
+【寫作背景與任務】
+學生扮演樂天 Kobo (香港) 公司的推廣部助理主任姜楓，代經理洪逸飛撰寫一封推廣信給會員。
+目標：介紹新產品 Kobo Libra Colour 的特點、產品體驗日活動及優惠，吸引會員出席。
+
+【評核指引與扣分準則】
+1. 內容組織 (必須涵蓋以下要點，欠缺整項者最高只能評為 F1)：
+   - 產品特點：彩色螢幕 (類紙質閱讀)、人體工學與實體翻頁鍵、支援手寫筆 (Kobo Stylus 2)、手寫轉文字、雲端同步 (Dropbox/Google Drive)、內建書庫 (借閱圖書館圖書)、防水 (IPX8)、防藍光護眼、超長續航力等。
+   - 活動詳情：2026年12月19日 14:00-17:00，銅鑼灣時代廣場地下中庭。活動包含示範、人氣主持 (阿正、Elsie) 分享心得、抽獎。
+   - 優惠詳情：30天免費訂閱、打卡獲精品、以優惠價 $1788 購買產品、買滿 $2000 獲 $400 電子書券。
+2. 結構與格式：
+   - 必須具備上款、下款、機構與發信人資料。
+   - 欠缺開首或收束段，最高評 4D；同時欠缺兩者最高評 F1；欠缺正文不予評級。格式混亂最高評 F1。
+3. 語文與策略：
+   - 需展現推廣色彩，適當剪裁資料，勿盲目抄襲。善用標題、第二人稱及推廣用語者可獲高分。
+
+【等級與分數對照】
+- 4A (70-80分)：達到預設目標，表現理想。信息量充足，針對讀者需要，結構嚴謹，推廣色彩濃厚。
+- 4B (65-69分)：達到預設目標，表現良好。剪裁合理，鋪排有序。
+- 4C (60-64分) / 4D (50-59分)：基本達到目標。能交代重點，但行文或有瑕疵，或結構稍有缺失。
+- F1 (30-49分) / F2 (0-29分)：未能達到預設目標。信息不足，格式不符。
+
+【輸出格式要求】
+請務必輸出純 JSON 格式，不要包含任何 Markdown 標記，結構如下：
+{
+  "student_name": "從下款提取或預設姓名",
+  "grade": "例如 4A2, 4B1, 4C1 等",
+  "score": "對應數值",
+  "comments": {
+    "overall": "例如：達到預設的溝通目標，表現理想：",
+    "content": [
+      "信息量充足，內容緊扣宣傳推廣主題...",
+      "能突出彩色螢幕與實體翻頁鍵的特點..."
+    ],
+    "language": [
+      "語言功能：完成宣傳推介的語言功能，推廣意識較強。",
+      "語法正確，善用推廣用語..."
+    ]
+  }
+}`;
+
+    async function startGrading() {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        const answer = document.getElementById('studentAnswer').value.trim();
+        let stuName = document.getElementById('studentName').value.trim();
+        
+        if (!apiKey) { alert("請輸入 DeepSeek API Key！"); return; }
+        if (!answer) { alert("請貼上學生答卷內容！"); return; }
+
+        const gradeBtn = document.getElementById('gradeBtn');
+        const loading = document.getElementById('loading');
+        
+        gradeBtn.disabled = true;
+        loading.style.display = 'block';
+
+        try {
+            const response = await fetch('https://api.deepseek.com/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'deepseek-chat',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: `學生姓名：${stuName}\n學生答卷內容：\n${answer}` }
+                    ],
+                    temperature: 0.2
+                })
+            });
+
+            const data = await response.json();
+            const aiResponse = data.choices[0].message.content;
+            
+            const cleanJson = aiResponse.replace(/```json|```/g, '').trim();
+            const result = JSON.parse(cleanJson);
+            
+            renderResult(result, stuName);
+
+        } catch (error) {
+            console.error(error);
+            alert("批改發生錯誤，請檢查 API Key 或控制台日誌。");
+        } finally {
+            gradeBtn.disabled = false;
+            loading.style.display = 'none';
+        }
+    }
+
+    function renderResult(data, inputName) {
+        const tbody = document.getElementById('tableBody');
+        const displayName = inputName || data.student_name || '未提供';
+        
+        let contentHtml = '';
+        data.comments.content.forEach(item => { contentHtml += `<li>➢ ${item}</li>`; });
+        
+        let langHtml = '';
+        data.comments.language.forEach(item => { langHtml += `<li>➢ ${item}</li>`; });
+
+        const rowHtml = `
+            <tr>
+                <td class="col-name">${displayName}</td>
+                <td class="col-grade">${data.grade}</td>
+                <td class="col-score">${data.score}</td>
+                <td class="col-comments">
+                    <div class="comment-overall">${data.comments.overall}</div>
+                    <div class="comment-section">內容組織：</div>
+                    <ul class="comment-list">${contentHtml}</ul>
+                    <div class="comment-section">語文運用與寫作策略：</div>
+                    <ul class="comment-list">${langHtml}</ul>
+                </td>
+            </tr>
+        `;
+        
+        tbody.insertAdjacentHTML('beforeend', rowHtml);
+        document.getElementById('studentAnswer').value = ''; 
+    }
+</script>
+</body>
+</html>
